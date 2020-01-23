@@ -8,3 +8,5 @@ edition = "2018"
 
 [dependencies]
 getopts = "0.2"
+reqwest = { version = "0.10", features = ["json"] }
+tokio = { version = "0.2", features = ["full"] }
