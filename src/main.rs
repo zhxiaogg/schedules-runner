@@ -5,6 +5,7 @@ use getopts::{Matches, Options};
 use reqwest;
 use reqwest::header::HeaderMap;
 use reqwest::Client;
+use reqwest::Response;
 use serde;
 use serde::Deserialize;
 use std::env;
@@ -16,6 +17,7 @@ use tokio::process::Command;
 use tokio::time;
 mod settings;
 use settings::Settings;
+use std::collections::HashMap;
 
 #[tokio::main]
 async fn main() {
@@ -47,7 +49,7 @@ async fn start(matches: Matches) {
             interval.tick().await;
             let execs = query_execs(&settings, &client).await;
             for e in execs {
-                execute(&settings, e);
+                execute(&settings, e, &client).await;
             }
         }
     })
@@ -63,11 +65,17 @@ struct Task {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Execution {
     id: String,
     task: Task,
     #[serde(with = "ts_seconds")]
     start_time: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateResult {
+    result: bool,
 }
 
 async fn query_execs(settings: &Settings, client: &Client) -> Vec<Execution> {
@@ -84,20 +92,41 @@ async fn query_execs(settings: &Settings, client: &Client) -> Vec<Execution> {
     }
 }
 
-fn execute(settings: &Settings, exec: Execution) {
-  let exec_dir = format!("{}tasks/{}/execs/{}", settings.logs, exec.task.id, exec.id);
-    tokio::spawn(async move {
-        println!("running execution {:?}", exec);
-        println!("create directory for this execution: {}", exec_dir);
-        create_dir_all(exec_dir.as_str()).await.unwrap();
+async fn execute(settings: &Settings, exec: Execution, client: &Client) {
+    let mut update = HashMap::new();
+    update.insert("status", "Started");
+    let url = format!("{}/api/v1/execs/{}", settings.server, exec.id);
+    let response = client.post(url.as_str()).json(&update).send().await;
+    if let true = update_success(response).await {
+        let exec_dir = format!("{}tasks/{}/execs/{}", settings.logs, exec.task.id, exec.id);
+        tokio::spawn(async move {
+            println!("running execution {:?}", exec);
+            println!("create directory for this execution: {}", exec_dir);
+            create_dir_all(exec_dir.as_str()).await.unwrap();
 
-        let task_file_path = &format!("{}/task.sh", exec_dir);
-        let mut task_file = File::create(task_file_path.as_str()).await.unwrap();
-        task_file.write_all(exec.task.script.as_bytes()).await.unwrap();
+            let task_file_path = &format!("{}/task.sh", exec_dir);
+            let mut task_file = File::create(task_file_path.as_str()).await.unwrap();
+            task_file
+                .write_all(exec.task.script.as_bytes())
+                .await
+                .unwrap();
 
-        let child = Command::new("bash").arg(task_file_path.as_str()).spawn();
-        child.expect("failed to spawn").await.unwrap();
-    });
+            let child = Command::new("bash").arg(task_file_path.as_str()).spawn();
+            child.expect("failed to spawn").await.unwrap();
+        });
+    } else {
+        println!("cannot mark exec as started, will giveup execution.");
+    }
+}
+
+async fn update_success(response: reqwest::Result<Response>) -> bool {
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            let r = resp.json::<UpdateResult>().await.unwrap();
+            r.result
+        }
+        _ => false,
+    }
 }
 
 fn print_usage(program: &str, opts: Options) {
