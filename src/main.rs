@@ -95,6 +95,7 @@ async fn query_execs(settings: &Settings, client: &Client) -> Vec<Execution> {
 async fn execute(settings: &Settings, exec: Execution, client: &Client) {
     let mut update = HashMap::new();
     update.insert("status", "Started");
+    update.insert("idempotentKey", "test");
     let url = format!("{}/api/v1/execs/{}", settings.server, exec.id);
     let response = client.post(url.as_str()).json(&update).send().await;
     if let true = update_success(response).await {
