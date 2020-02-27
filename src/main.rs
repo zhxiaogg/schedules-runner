@@ -18,6 +18,7 @@ use tokio::time;
 mod settings;
 use settings::Settings;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
@@ -44,12 +45,12 @@ async fn start(matches: Matches) {
 
         let mut headers = HeaderMap::new();
         headers.insert("token", token.parse().unwrap());
-        let client = Client::builder().default_headers(headers).build().unwrap();
+        let client = Arc::new(Client::builder().default_headers(headers).build().unwrap());
         loop {
             interval.tick().await;
-            let execs = query_execs(&settings, &client).await;
+            let execs = query_execs(&settings, client.clone()).await;
             for e in execs {
-                execute(&settings, e, &client).await;
+                execute(&settings, e, client.clone());
             }
         }
     })
@@ -78,7 +79,7 @@ struct UpdateResult {
     result: bool,
 }
 
-async fn query_execs(settings: &Settings, client: &Client) -> Vec<Execution> {
+async fn query_execs(settings: &Settings, client: Arc<Client>) -> Vec<Execution> {
     let url = format!("{}/api/v1/execs", settings.server);
     let r = client.get(url.as_str()).send().await;
     match r {
@@ -92,15 +93,15 @@ async fn query_execs(settings: &Settings, client: &Client) -> Vec<Execution> {
     }
 }
 
-async fn execute(settings: &Settings, exec: Execution, client: &Client) {
-    let mut update = HashMap::new();
-    update.insert("status", "Started");
-    update.insert("idempotentKey", "test");
+fn execute(settings: &Settings, exec: Execution, client: Arc<Client>) {
     let url = format!("{}/api/v1/execs/{}", settings.server, exec.id);
-    let response = client.post(url.as_str()).json(&update).send().await;
-    if let true = update_success(response).await {
-        let exec_dir = format!("{}tasks/{}/execs/{}", settings.logs, exec.task.id, exec.id);
-        tokio::spawn(async move {
+    let exec_dir = format!("{}tasks/{}/execs/{}", settings.logs, exec.task.id, exec.id);
+    tokio::spawn(async move {
+        let mut update = HashMap::new();
+        update.insert("status", "Started");
+        update.insert("idempotentKey", "test");
+        let response = client.post(url.as_str()).json(&update).send().await;
+        if update_success(response).await {
             println!("running execution {:?}", exec);
             println!("create directory for this execution: {}", exec_dir);
             create_dir_all(exec_dir.as_str()).await.unwrap();
@@ -114,10 +115,10 @@ async fn execute(settings: &Settings, exec: Execution, client: &Client) {
 
             let child = Command::new("bash").arg(task_file_path.as_str()).spawn();
             child.expect("failed to spawn").await.unwrap();
-        });
-    } else {
-        println!("cannot mark exec as started, will giveup execution.");
-    }
+        } else {
+            println!("cannot mark exec as started, will giveup execution.");
+        }
+    });
 }
 
 async fn update_success(response: reqwest::Result<Response>) -> bool {
