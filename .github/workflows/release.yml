@@ -35,5 +35,5 @@ jobs:
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}  
           asset_path: target/schedules-runner.zip
-          asset_name: schedules-runner-linux-x86-64.zip
+          asset_name: schedules-runner-linux-x86_64.zip
           asset_content_type: application/zip
