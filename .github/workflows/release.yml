@@ -1,0 +1,39 @@
+
+on:
+  push:
+    tags: ['v*']
+
+name: Release
+
+jobs:
+  build:
+    name: Release & Upload Asset
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Package
+        uses: zhxiaogg/cargo-static-build@master
+        with:
+          cmd: cargo build --release --target x86_64-unknown-linux-musl
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Schedules Runner ${{ github.ref }}
+          draft: false
+          prerelease: false
+      - name: Archive Artifacts
+        run: zip -j target/schedules-runner.zip target/x86_64-unknown-linux-musl/release/schedules-runner settings.toml
+      - name: Upload Artifacts
+        id: upload-release-asset 
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}  
+          asset_path: target/schedules-runner.zip
+          asset_name: schedules-runner-linux-x86-64.zip
+          asset_content_type: application/zip
