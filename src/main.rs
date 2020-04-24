@@ -7,7 +7,7 @@ use reqwest::header::HeaderMap;
 use reqwest::Client;
 use reqwest::Response;
 use serde;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::env;
 use std::time::Duration;
 use tokio::fs::create_dir_all;
@@ -17,7 +17,6 @@ use tokio::process::Command;
 use tokio::time;
 mod settings;
 use settings::Settings;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 #[tokio::main]
@@ -45,6 +44,7 @@ async fn start(matches: Matches) {
 
         let mut headers = HeaderMap::new();
         headers.insert("token", token.parse().unwrap());
+        headers.insert("runner", "Client".parse().unwrap());
         let client = Arc::new(Client::builder().default_headers(headers).build().unwrap());
         loop {
             interval.tick().await;
@@ -62,7 +62,7 @@ async fn start(matches: Matches) {
 struct Task {
     id: String,
     name: String,
-    script: String,
+    payload: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -77,6 +77,18 @@ struct Execution {
 #[derive(Debug, Deserialize)]
 struct UpdateResult {
     result: bool,
+}
+
+#[serde(rename_all = "camelCase")]
+#[derive(Debug, Serialize)]
+struct ExecutionStatus {
+    value: String,
+    idempotent_key: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ExecutionUpdateView {
+    status: ExecutionStatus,
 }
 
 async fn query_execs(settings: &Settings, client: Arc<Client>) -> Vec<Execution> {
@@ -97,9 +109,12 @@ fn execute(settings: &Settings, exec: Execution, client: Arc<Client>) {
     let url = format!("{}/api/v1/execs/{}", settings.server, exec.id);
     let exec_dir = format!("{}tasks/{}/execs/{}", settings.logs, exec.task.id, exec.id);
     tokio::spawn(async move {
-        let mut update = HashMap::new();
-        update.insert("status", "Started");
-        update.insert("idempotentKey", "test");
+        let update = ExecutionUpdateView {
+            status: ExecutionStatus {
+                value: "Started".to_owned(),
+                idempotent_key: "test".to_owned(),
+            },
+        };
         let response = client.post(url.as_str()).json(&update).send().await;
         if update_success(response).await {
             println!("running execution {:?}", exec);
@@ -109,7 +124,7 @@ fn execute(settings: &Settings, exec: Execution, client: Arc<Client>) {
             let task_file_path = &format!("{}/task.sh", exec_dir);
             let mut task_file = File::create(task_file_path.as_str()).await.unwrap();
             task_file
-                .write_all(exec.task.script.as_bytes())
+                .write_all(exec.task.payload.as_bytes())
                 .await
                 .unwrap();
 
