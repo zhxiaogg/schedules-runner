@@ -14,7 +14,7 @@ impl Settings {
         config
             .merge(config::File::with_name("settings"))
             .unwrap()
-            .merge(Environment::with_prefix("SCHEDULES_RUNNER"))
+            .merge(Environment::with_prefix("SCHEDULER_RUNNER"))
             .unwrap();
         if let Some(t) = token {
             config.set("token", t).unwrap();

@@ -39,7 +39,7 @@ async fn start(matches: Matches) {
     let settings = Settings::new(token).unwrap();
     tokio::spawn(async move {
         let token = settings.token.as_str();
-        println!("starting schedules runner with token: {:?}", token);
+        println!("starting scheduler runner with token: {:?}", token);
         let mut interval = time::interval(Duration::from_secs(10));
 
         let mut headers = HeaderMap::new();

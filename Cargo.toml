@@ -1,6 +1,6 @@
 [package]
-name = "schedules-runner"
-version = "0.1.0"
+name = "scheduler-runner"
+version = "0.3.0"
 authors = ["zhxiaog <zhxiaog@outlook.com>"]
 edition = "2018"
 
